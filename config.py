@@ -14,6 +14,11 @@ class Config:
     # Audio Settings
     SAMPLE_RATE = int(os.getenv("SAMPLE_RATE", "16000"))
     FRAME_LENGTH = int(os.getenv("FRAME_LENGTH", "512"))
+    # Audio
+    SAMPLE_RATE = 16000
+    FRAME_LENGTH = 512
+    USE_CUDA = False  # Set True if you have NVIDIA GPU
+
 
     # Paths (Windows)
     WAKE_WORD_PATH = os.getenv("WAKE_WORD_PATH").replace('\\', '/')  # Normalize path

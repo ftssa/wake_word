@@ -1,82 +1,81 @@
-import pvporcupine
-import sounddevice as sd
 import numpy as np
+import sounddevice as sd
+from audio.recorder import AudioRecorder
+from audio.transcriber import Transcriber  # Changed to match class name
 from config import Config
 
 
-class VoiceRecorder:
+class VoiceAssistant:
     def __init__(self):
-        Config.validate()
-        self.porcupine = pvporcupine.create(
-            access_key=Config.PORCUPINE_KEY,
-            keyword_paths=[Config.WAKE_WORD_PATH],
-            sensitivities=[0.7]
-        )
-        self.sample_rate = self.porcupine.sample_rate
-        self.frame_length = self.porcupine.frame_length
-        self.silence_threshold = 0.02  # 2% of max volume
-        self.silence_limit = 1.5  # seconds
-        self.recording = False
-        self.silent_frames = 0
-        self.frames = []
+        # Initialize components
+        self.recorder = AudioRecorder()
+        self.transcriber = Transcriber(model_size="base.en")  # Fixed initialization
+        self.porcupine = self._init_wake_word()
 
-    def process_audio(self, audio_frame):
-        """Process audio with proper type conversion"""
-        # Convert to Porcupine-compatible format
-        pcm = np.frombuffer(audio_frame, dtype=np.int16)
+    # ... rest of your code remains the same ...
 
-        if not self.recording:
-            # Wake word detection
-            if self.porcupine.process(pcm) >= 0:
-                print("\n🔔 WAKE WORD DETECTED - Recording started...")
-                self.recording = True
-                self.frames = [pcm]
-            return
-
-        # Silence detection
-        volume = np.abs(pcm).mean() / 32768
-        if volume < self.silence_threshold:
-            self.silent_frames += 1
-            if self.silent_frames > int(self.silence_limit * self.sample_rate / self.frame_length):
-                print("\n🔇 Silence detected - Recording stopped")
-                self.save_recording()
-                self.recording = False
-                self.silent_frames = 0
-        else:
-            self.silent_frames = 0
-            self.frames.append(pcm)
-
-    def save_recording(self):
-        """Save recorded audio"""
-        if len(self.frames) > 0:
-            audio = np.concatenate(self.frames)
-            print(f"💾 Recorded {len(audio) / self.sample_rate:.2f} seconds")
-            # Add your save/processing logic here
-
-    def listen(self):
+    def _init_wake_word(self):
+        """Initialize wake word detection"""
         try:
+            import pvporcupine
+            return pvporcupine.create(
+                access_key=Config.PORCUPINE_KEY,
+                keyword_paths=[Config.WAKE_WORD_PATH],
+                sensitivities=[0.7]
+            )
+        except Exception as e:
+            print(f"⚠️ Wake word disabled: {str(e)}")
+            return None
+
+    def process_command(self):
+        """Full voice command processing"""
+        print("\n🔵 Speak your command after the beep...")
+        audio = self.recorder.record_until_silence(
+            max_seconds=10,
+            silence_threshold=0.02,
+            silence_duration=1.5
+        )
+
+        print("\n🟠 Transcribing...")
+        text = self.transcriber.transcribe(audio)
+        print(f"\n💬 You said: {text}")
+        return text
+
+    def run(self):
+        try:
+            if not self.porcupine:
+                print("🔴 Running in text-only mode (no wake word)")
+                self.process_command()
+                return
+
+            print(f"\n👂 Listening for '{Config.WAKE_WORD_NAME}'... (Ctrl+C to exit)")
             with sd.InputStream(
-                    samplerate=self.sample_rate,
+                    samplerate=self.porcupine.sample_rate,
                     channels=1,
                     dtype='int16',
-                    blocksize=self.frame_length,
-                    callback=self.audio_callback
+                    blocksize=self.porcupine.frame_length,
+                    callback=self._audio_callback
             ):
-                print(f"👂 Waiting for wake word ({Config.WAKE_WORD_NAME})...")
                 while True:
                     sd.sleep(100)
 
         except KeyboardInterrupt:
-            print("\n🛑 Stopped by user")
+            print("\n🛑 Shutting down...")
         finally:
-            self.porcupine.delete()
+            if self.porcupine:
+                self.porcupine.delete()
 
-    def audio_callback(self, indata, frames, time, status):
+    def _audio_callback(self, indata, frames, time, status):
+        """Handle wake word detection"""
         if status:
             print("Audio status:", status)
-        self.process_audio(indata.copy())
+
+        if self.porcupine.process(np.frombuffer(indata, dtype=np.int16)) >= 0:
+            sd.stop()  # Stop streaming temporarily
+            self.process_command()
+            print(f"\n👂 Listening for '{Config.WAKE_WORD_NAME}'...")
 
 
 if __name__ == "__main__":
-    recorder = VoiceRecorder()
-    recorder.listen()
+    assistant = VoiceAssistant()
+    assistant.run()
