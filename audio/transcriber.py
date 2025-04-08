@@ -6,7 +6,7 @@ import warnings
 
 
 class Transcriber:
-    def __init__(self, model_size: str = "base.en"):
+    def __init__(self, model_size: str = "medium.en"):
         self.device = self._get_device()
         self.model = self._load_model(model_size)
 
